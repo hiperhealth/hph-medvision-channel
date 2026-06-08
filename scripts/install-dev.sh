@@ -13,11 +13,17 @@ OS="$(uname -s || echo unknown)"
 
 case "$OS" in
   Linux*)
-    # Linux CI: use CPU-only PyTorch wheels from the dedicated index.
-    # This avoids downloading the ~2GB CUDA wheels — CI only needs CPU.
-    uv pip install \
-      torch torchvision \
-      --index-url https://download.pytorch.org/whl/cpu
+    if [ "${CI:-false}" = "true" ]; then
+      # Linux CI: use CPU-only PyTorch wheels from the dedicated index.
+      # This avoids downloading the ~2GB CUDA wheels — CI only needs CPU.
+      uv pip install \
+        torch torchvision \
+        --index-url https://download.pytorch.org/whl/cpu
+    else
+      # Local Linux dev: install default PyPI wheels which include CUDA support
+      echo "Installing CUDA-enabled PyTorch for local development..."
+      uv pip install torch torchvision
+    fi
     ;;
 
   Darwin*)
