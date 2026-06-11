@@ -1,6 +1,13 @@
 """Image preprocessing and quality validation for MedVision skills."""
 
 from dataclasses import dataclass
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+from PIL import Image as PILImage
+from PIL.ExifTags import Base as ExifBase
 
 
 @dataclass(frozen=True)
@@ -57,3 +64,50 @@ class ImageQualityError(Exception):
         self.reason = reason
         self.detail = detail or {}
         super().__init__(f'Image quality error: {reason}')
+
+
+def correct_exif_orientation(
+    image: np.ndarray,
+    path: Path,
+) -> np.ndarray:
+    """Rotate *image* to match its EXIF orientation tag.
+
+    Phone cameras store photos with the raw sensor orientation
+    and an EXIF tag indicating the correct display rotation.
+    OpenCV's ``imread`` ignores this tag, so without correction
+    the model would see a rotated image.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        BGR image array from ``cv2.imread``.
+    path : Path
+        File path used to read the EXIF header via PIL.
+
+    Returns
+    -------
+    np.ndarray
+        Correctly oriented image, or the original if no EXIF
+        orientation is present.
+    """
+    try:
+        with PILImage.open(path) as pil_img:
+            exif_data = pil_img.getexif()
+    except Exception:
+        return image
+
+    orientation = exif_data.get(ExifBase.Orientation)
+    if orientation is None:
+        return image
+
+    _ROTATION_MAP = {
+        3: cv2.ROTATE_180,
+        6: cv2.ROTATE_90_CLOCKWISE,
+        8: cv2.ROTATE_90_COUNTERCLOCKWISE,
+    }
+
+    rotation = _ROTATION_MAP.get(orientation)
+    if rotation is not None:
+        return cv2.rotate(image, rotation)
+
+    return image
