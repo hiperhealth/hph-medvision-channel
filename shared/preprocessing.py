@@ -274,3 +274,85 @@ def _bgr_to_rgb(image: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(
         cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     )
+
+
+class ImagePreprocessor:
+    """End-to-end image preprocessing for MedVision inference.
+
+    Combines quality validation and MONAI transforms into a single
+    callable.  This is the public API that skills import.
+
+    Parameters
+    ----------
+    target_size : int
+        Spatial size for the model input tensor.
+    thresholds : QualityThresholds | None
+        Custom quality thresholds; uses module defaults if ``None``.
+
+    Examples
+    --------
+    >>> preprocessor = ImagePreprocessor()
+    >>> tensor = preprocessor.preprocess('/uploads/skin_photo.jpg')
+    >>> tensor.shape
+    torch.Size([1, 3, 224, 224])
+    """
+
+    def __init__(
+        self,
+        target_size: int = 224,
+        thresholds: QualityThresholds | None = None,
+    ) -> None:
+        self._target_size = target_size
+        self._thresholds = thresholds or DEFAULT_THRESHOLDS
+        self._transforms = build_inference_transforms(target_size)
+
+    def validate(self, image_path: str | Path) -> np.ndarray:
+        """Validate image quality without running transforms.
+
+        Parameters
+        ----------
+        image_path : str | Path
+            Path to the image file.
+
+        Returns
+        -------
+        np.ndarray
+            Decoded, EXIF-corrected BGR image.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the file does not exist.
+        ImageQualityError
+            If the image fails any quality check.
+        """
+        return validate_image(image_path, self._thresholds)
+
+    def preprocess(self, image_path: str | Path) -> torch.Tensor:
+        """Validate and preprocess an image for model inference.
+
+        Parameters
+        ----------
+        image_path : str | Path
+            Path to the image file.
+
+        Returns
+        -------
+        torch.Tensor
+            Tensor of shape ``(1, 3, target_size, target_size)``.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the file does not exist.
+        ImageQualityError
+            If the image fails any quality check.
+        """
+        bgr_image = self.validate(image_path)
+        rgb_array = _bgr_to_rgb(bgr_image)
+        tensor = self._transforms(rgb_array)
+
+        if not isinstance(tensor, torch.Tensor):
+            tensor = torch.as_tensor(tensor)
+
+        return tensor.unsqueeze(0)
