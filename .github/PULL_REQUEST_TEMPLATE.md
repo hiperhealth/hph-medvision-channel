@@ -12,8 +12,7 @@
   as possible to increase the chances of a timely review. Large PRs may not be
   reviewed and may be closed.
 - Don’t add unnecessary comments. Your code should be readable and
-  self-documenting
-  ([guidance](https://google.github.io/styleguide/cppguide.html#Comments)).
+  self-documenting ([guidance](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings)).
 - Don’t change core features without prior discussion with the community. Use
   our Discord to discuss ideas, blockers, or issues
   (https://discord.gg/Nu4MdGj9jB).
@@ -81,7 +80,7 @@ Author's checklist:
 
 Copy and paste this template for your review's note:
 
-```
+```markdown
 ## Reviewer's Checklist
 
 - [ ] I managed to reproduce the problem locally from the `main` branch
