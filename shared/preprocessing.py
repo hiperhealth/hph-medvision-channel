@@ -14,7 +14,6 @@ from monai.transforms import (
     Resize,
     ScaleIntensity,
 )
-
 from PIL import Image as PILImage
 from PIL.ExifTags import Base as ExifBase
 
@@ -232,8 +231,8 @@ def build_inference_transforms(
 ) -> Compose:
     """Build a MONAI transform pipeline for inference.
 
-    Converts a decoded NumPy image (H×W×C, uint8) into a
-    normalised tensor (C×H×W, float32) suitable for DINOv2
+    Converts a decoded NumPy image (HxWxC, uint8) into a
+    normalised tensor (CxHxW, float32) suitable for DINOv2
     or ResNet-50.
 
     Parameters
