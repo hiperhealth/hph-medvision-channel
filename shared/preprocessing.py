@@ -5,6 +5,15 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import torch
+
+from monai.transforms import (
+    Compose,
+    EnsureChannelFirst,
+    NormalizeIntensity,
+    Resize,
+    ScaleIntensity,
+)
 
 from PIL import Image as PILImage
 from PIL.ExifTags import Base as ExifBase
@@ -212,3 +221,56 @@ def validate_image(
         )
 
     return image
+
+
+_IMAGENET_MEAN = [0.485, 0.456, 0.406]
+_IMAGENET_STD = [0.229, 0.224, 0.225]
+
+
+def build_inference_transforms(
+    target_size: int = 224,
+) -> Compose:
+    """Build a MONAI transform pipeline for inference.
+
+    Converts a decoded NumPy image (H×W×C, uint8) into a
+    normalised tensor (C×H×W, float32) suitable for DINOv2
+    or ResNet-50.
+
+    Parameters
+    ----------
+    target_size : int
+        Spatial dimensions for the output tensor.
+
+    Returns
+    -------
+    monai.transforms.Compose
+        Callable: ``np.ndarray`` → ``torch.Tensor``.
+    """
+    return Compose([
+        EnsureChannelFirst(channel_dim=-1),
+        Resize(spatial_size=(target_size, target_size)),
+        ScaleIntensity(),
+        NormalizeIntensity(
+            subtrahend=_IMAGENET_MEAN,
+            divisor=_IMAGENET_STD,
+            channel_wise=True,
+        ),
+    ])
+
+
+def _bgr_to_rgb(image: np.ndarray) -> np.ndarray:
+    """Convert a BGR image to contiguous RGB array.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        BGR array from ``cv2.imread``.
+
+    Returns
+    -------
+    np.ndarray
+        Contiguous RGB array.
+    """
+    return np.ascontiguousarray(
+        cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    )
