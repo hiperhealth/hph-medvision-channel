@@ -2,12 +2,13 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import cv2
 import numpy as np
 import torch
 
-from monai.transforms import (
+from monai.transforms import (  # type: ignore[attr-defined]
     Compose,
     EnsureChannelFirst,
     NormalizeIntensity,
@@ -245,16 +246,18 @@ def build_inference_transforms(
     monai.transforms.Compose
         Callable: ``np.ndarray`` → ``torch.Tensor``.
     """
-    return Compose([
-        EnsureChannelFirst(channel_dim=-1),
-        Resize(spatial_size=(target_size, target_size)),
-        ScaleIntensity(),
-        NormalizeIntensity(
-            subtrahend=_IMAGENET_MEAN,
-            divisor=_IMAGENET_STD,
-            channel_wise=True,
-        ),
-    ])
+    return Compose(
+        [
+            EnsureChannelFirst(channel_dim=-1),
+            Resize(spatial_size=(target_size, target_size)),
+            ScaleIntensity(),
+            NormalizeIntensity(
+                subtrahend=_IMAGENET_MEAN,
+                divisor=_IMAGENET_STD,
+                channel_wise=True,
+            ),
+        ]
+    )
 
 
 def _bgr_to_rgb(image: np.ndarray) -> np.ndarray:
@@ -270,9 +273,7 @@ def _bgr_to_rgb(image: np.ndarray) -> np.ndarray:
     np.ndarray
         Contiguous RGB array.
     """
-    return np.ascontiguousarray(
-        cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    )
+    return np.ascontiguousarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
 
 
 class ImagePreprocessor:
@@ -354,4 +355,4 @@ class ImagePreprocessor:
         if not isinstance(tensor, torch.Tensor):
             tensor = torch.as_tensor(tensor)
 
-        return tensor.unsqueeze(0)
+        return cast(torch.Tensor, tensor.unsqueeze(0))
