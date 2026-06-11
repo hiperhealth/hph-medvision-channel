@@ -71,9 +71,7 @@ class TestValidateImage:
         with pytest.raises(FileNotFoundError):
             validate_image(tmp_path / 'nonexistent.jpg')
 
-    def test_below_min_resolution(
-        self, small_image: Path
-    ) -> None:
+    def test_below_min_resolution(self, small_image: Path) -> None:
         with pytest.raises(ImageQualityError) as exc_info:
             validate_image(small_image)
         assert exc_info.value.detail['check'] == 'resolution'
@@ -88,9 +86,7 @@ class TestValidateImage:
             validate_image(blurry_image)
         assert exc_info.value.detail['check'] == 'blur'
 
-    def test_unsupported_format(
-        self, non_image_file: Path
-    ) -> None:
+    def test_unsupported_format(self, non_image_file: Path) -> None:
         with pytest.raises(ImageQualityError) as exc_info:
             validate_image(non_image_file)
         assert exc_info.value.detail['check'] == 'format'
@@ -117,18 +113,14 @@ class TestValidateImage:
 class TestExifOrientationCorrection:
     """Tests for correct_exif_orientation function."""
 
-    def test_no_exif_returns_unchanged(
-        self, valid_image: Path
-    ) -> None:
+    def test_no_exif_returns_unchanged(self, valid_image: Path) -> None:
         import cv2
 
         original = cv2.imread(str(valid_image), cv2.IMREAD_COLOR)
         result = correct_exif_orientation(original, valid_image)
         np.testing.assert_array_equal(result, original)
 
-    def test_non_image_path_returns_unchanged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_non_image_path_returns_unchanged(self, tmp_path: Path) -> None:
         fake_image = np.zeros((100, 100, 3), dtype=np.uint8)
         fake_path = tmp_path / 'nonexistent.jpg'
         result = correct_exif_orientation(fake_image, fake_path)
@@ -140,25 +132,19 @@ class TestBuildInferenceTransforms:
 
     def test_output_shape_default(self) -> None:
         transforms = build_inference_transforms()
-        img = np.random.randint(
-            0, 255, (300, 400, 3), dtype=np.uint8
-        )
+        img = np.random.randint(0, 255, (300, 400, 3), dtype=np.uint8)
         result = transforms(img)
         assert result.shape == (3, 224, 224)
 
     def test_output_shape_custom_size(self) -> None:
         transforms = build_inference_transforms(target_size=128)
-        img = np.random.randint(
-            0, 255, (300, 400, 3), dtype=np.uint8
-        )
+        img = np.random.randint(0, 255, (300, 400, 3), dtype=np.uint8)
         result = transforms(img)
         assert result.shape == (3, 128, 128)
 
     def test_output_is_float(self) -> None:
         transforms = build_inference_transforms()
-        img = np.random.randint(
-            0, 255, (256, 256, 3), dtype=np.uint8
-        )
+        img = np.random.randint(0, 255, (256, 256, 3), dtype=np.uint8)
         result = transforms(img)
         assert result.dtype in (torch.float32, np.float32)
 
@@ -181,16 +167,12 @@ class TestImagePreprocessor:
         result = preprocessor.preprocess(valid_image)
         assert result.shape == (1, 3, 128, 128)
 
-    def test_validation_failure_propagates(
-        self, small_image: Path
-    ) -> None:
+    def test_validation_failure_propagates(self, small_image: Path) -> None:
         preprocessor = ImagePreprocessor()
         with pytest.raises(ImageQualityError):
             preprocessor.preprocess(small_image)
 
-    def test_validate_returns_ndarray(
-        self, valid_image: Path
-    ) -> None:
+    def test_validate_returns_ndarray(self, valid_image: Path) -> None:
         preprocessor = ImagePreprocessor()
         result = preprocessor.validate(valid_image)
         assert isinstance(result, np.ndarray)
