@@ -111,3 +111,104 @@ def correct_exif_orientation(
         return cv2.rotate(image, rotation)
 
     return image
+
+
+def validate_image(
+    image_path: str | Path,
+    thresholds: QualityThresholds | None = None,
+) -> np.ndarray:
+    """Validate a clinical image against quality thresholds.
+
+    Checks are applied in order: file existence, format, decode
+    and resolution, aspect ratio, blur detection.  The image is
+    EXIF-corrected before dimension checks.
+
+    Parameters
+    ----------
+    image_path : str | Path
+        Path to the image file.
+    thresholds : QualityThresholds | None
+        Custom thresholds; defaults to ``DEFAULT_THRESHOLDS``.
+
+    Returns
+    -------
+    np.ndarray
+        Decoded, EXIF-corrected BGR image.
+
+    Raises
+    ------
+    FileNotFoundError
+        If *image_path* does not exist.
+    ImageQualityError
+        If any quality check fails.
+    """
+    path = Path(image_path)
+    cfg = thresholds or DEFAULT_THRESHOLDS
+
+    if not path.is_file():
+        raise FileNotFoundError(f'Image not found: {path}')
+
+    suffix = path.suffix.lower()
+    if suffix not in cfg.allowed_formats:
+        raise ImageQualityError(
+            reason=f'unsupported format {suffix!r}',
+            detail={
+                'check': 'format',
+                'actual': suffix,
+                'allowed': sorted(cfg.allowed_formats),
+            },
+        )
+
+    image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+    if image is None:
+        raise ImageQualityError(
+            reason='file could not be decoded as an image',
+            detail={'check': 'decode', 'path': str(path)},
+        )
+
+    image = correct_exif_orientation(image, path)
+
+    height, width = image.shape[:2]
+    if width < cfg.min_resolution or height < cfg.min_resolution:
+        raise ImageQualityError(
+            reason=(
+                f'resolution {width}x{height} below minimum '
+                f'{cfg.min_resolution}px'
+            ),
+            detail={
+                'check': 'resolution',
+                'actual': (width, height),
+                'threshold': cfg.min_resolution,
+            },
+        )
+
+    aspect = max(width, height) / max(min(width, height), 1)
+    if aspect > cfg.max_aspect_ratio:
+        raise ImageQualityError(
+            reason=(
+                f'aspect ratio {aspect:.2f} exceeds maximum '
+                f'{cfg.max_aspect_ratio}'
+            ),
+            detail={
+                'check': 'aspect_ratio',
+                'actual': aspect,
+                'threshold': cfg.max_aspect_ratio,
+            },
+        )
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    laplacian_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    if laplacian_var < cfg.min_laplacian_var:
+        raise ImageQualityError(
+            reason=(
+                f'image is too blurry (laplacian variance '
+                f'{laplacian_var:.1f} < {cfg.min_laplacian_var})'
+            ),
+            detail={
+                'check': 'blur',
+                'actual': laplacian_var,
+                'threshold': cfg.min_laplacian_var,
+            },
+        )
+
+    return image
