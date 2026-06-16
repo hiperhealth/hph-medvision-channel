@@ -254,7 +254,9 @@ class ModelRegistry:
             if actual != expected_sha256:
                 dest.unlink()
                 raise ModelIntegrityError(
-                    model_id, expected_sha256, actual,
+                    model_id,
+                    expected_sha256,
+                    actual,
                 )
 
             # 3. Update manifest
