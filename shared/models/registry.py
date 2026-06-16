@@ -7,13 +7,17 @@ ResNet-50, etc.).
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import shutil
 import urllib.request
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
+
+from filelock import FileLock
 
 _DEFAULT_CACHE_DIR = Path.home() / '.hiperhealth' / 'models'
 _MANIFEST_FILENAME = 'manifest.json'
@@ -189,3 +193,93 @@ class ModelRegistry:
         finally:
             if tmp.exists():
                 tmp.unlink()
+
+    def get_weights(
+        self,
+        model_id: str,
+        url: str,
+        expected_sha256: str,
+        *,
+        verify_cached: bool = False,
+    ) -> Path:
+        """Retrieve model weights, downloading if necessary.
+
+        A per-model file lock prevents concurrent processes
+        from downloading the same file simultaneously.
+
+        Parameters
+        ----------
+        model_id : str
+            Unique model identifier.
+        url : str
+            Download URL for the weights file.
+        expected_sha256 : str
+            Expected SHA-256 hex digest.
+        verify_cached : bool
+            If ``True``, re-compute SHA-256 even on a cache
+            hit.  Defaults to ``False`` for speed; set to
+            ``True`` in strict clinical mode.
+
+        Returns
+        -------
+        Path
+            Absolute path to the verified weight file.
+
+        Raises
+        ------
+        ModelIntegrityError
+            If the file's hash does not match
+            *expected_sha256*.
+        """
+        filename = f'{model_id}.pth'
+        dest = self._cache_dir / filename
+        lock = FileLock(
+            self._cache_dir / f'.{model_id}.lock',
+        )
+
+        with lock:
+            # 1. Cache hit
+            if dest.exists():
+                if not verify_cached:
+                    return dest
+                actual = self._compute_sha256(dest)
+                if actual == expected_sha256:
+                    return dest
+                # Hash mismatch -> delete stale file
+                dest.unlink()
+
+            # 2. Cache miss -> download and verify
+            self._download(url, dest)
+            actual = self._compute_sha256(dest)
+            if actual != expected_sha256:
+                dest.unlink()
+                raise ModelIntegrityError(
+                    model_id, expected_sha256, actual,
+                )
+
+            # 3. Update manifest
+            manifest = self._load_manifest()
+            entry = ModelEntry(
+                model_id=model_id,
+                url=url,
+                sha256=expected_sha256,
+                filename=filename,
+                downloaded_at=datetime.now(
+                    tz=timezone.utc,
+                ).isoformat(),
+            )
+            manifest[model_id] = dataclasses.asdict(entry)
+            self._save_manifest(manifest)
+
+            return dest
+
+    def list_models(self) -> list[str]:
+        """Return model IDs present in the manifest.
+
+        Returns
+        -------
+        list[str]
+            Sorted list of model IDs that have been
+            successfully downloaded and verified.
+        """
+        return sorted(self._load_manifest().keys())
