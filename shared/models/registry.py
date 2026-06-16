@@ -7,7 +7,10 @@ ResNet-50, etc.).
 
 from __future__ import annotations
 
+import hashlib
 import json
+import shutil
+import urllib.request
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -134,3 +137,55 @@ class ModelRegistry:
         with tmp.open('w') as fh:
             json.dump(manifest, fh, indent=2)
         tmp.rename(self._manifest_path)
+
+    @staticmethod
+    def _compute_sha256(path: Path) -> str:
+        """Compute the SHA-256 hex digest of a file.
+
+        Reads in chunks to handle arbitrarily large model
+        weight files without loading them into memory.
+
+        Parameters
+        ----------
+        path : Path
+            File to hash.
+
+        Returns
+        -------
+        str
+            Lowercase hex digest (64 characters).
+        """
+        hasher = hashlib.sha256()
+        with path.open('rb') as fh:
+            while chunk := fh.read(_CHUNK_SIZE):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+
+    def _download(self, url: str, dest: Path) -> None:
+        """Download a file from *url* to *dest*.
+
+        Uses a temporary ``.part`` file and atomic rename
+        to prevent partial downloads from being used.
+        The temp file is always in the same directory as
+        *dest* so ``rename()`` is atomic on POSIX.
+
+        Parameters
+        ----------
+        url : str
+            Remote URL to fetch.
+        dest : Path
+            Final local path for the downloaded file.
+        """
+        tmp = dest.with_suffix('.part')
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={'User-Agent': 'hph-medvision/0.1'},
+            )
+            with urllib.request.urlopen(req) as resp:
+                with tmp.open('wb') as fh:
+                    shutil.copyfileobj(resp, fh)
+            tmp.rename(dest)
+        finally:
+            if tmp.exists():
+                tmp.unlink()
