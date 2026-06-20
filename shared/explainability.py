@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Literal
+from typing import Callable, Literal, cast
 
 import cv2
 import numpy as np
@@ -178,9 +178,7 @@ class AttentionRollout:
         self._attentions: list[torch.Tensor] = []
         self._hooks: list[torch.utils.hooks.RemovableHandle] = []
         for block in model.blocks:  # type: ignore[union-attr]
-            hook = block.attn.register_forward_hook(
-                self._save_attention
-            )
+            hook = block.attn.register_forward_hook(self._save_attention)
             self._hooks.append(hook)
 
     def _save_attention(
@@ -242,12 +240,8 @@ class AttentionRollout:
 
             # 0.5*A + 0.5*I simulates the residual connection
             # path (x + attn(x)) present in every ViT block.
-            fused_hat = 0.5 * fused + 0.5 * torch.eye(
-                fused.size(-1)
-            )
-            fused_hat = fused_hat / fused_hat.sum(
-                dim=-1, keepdim=True
-            )
+            fused_hat = 0.5 * fused + 0.5 * torch.eye(fused.size(-1))
+            fused_hat = fused_hat / fused_hat.sum(dim=-1, keepdim=True)
             result = fused_hat @ result
 
         # CLS token row (index 0), excluding CLS-to-CLS.
@@ -255,16 +249,11 @@ class AttentionRollout:
 
         num_patches = mask.size(0)
         h = w = int(num_patches**0.5)
-        mask_np: np.ndarray = np.asarray(
-            mask.reshape(h, w).numpy()
-        )
+        mask_np: np.ndarray = np.asarray(mask.reshape(h, w).numpy())
 
         mask_min = float(mask_np.min())
         mask_max = float(mask_np.max())
-        mask_np = (
-            (mask_np - mask_min)
-            / (mask_max - mask_min + 1e-8)
-        )
+        mask_np = (mask_np - mask_min) / (mask_max - mask_min + 1e-8)
 
         return mask_np
 
@@ -312,6 +301,7 @@ def overlay_heatmap(
         ``uint8``.  Ready to save as PNG.
     """
     from pytorch_grad_cam.utils.image import show_cam_on_image
+
     h, w = image.shape[:2]
 
     heatmap_resized = cv2.resize(
@@ -331,3 +321,55 @@ def overlay_heatmap(
     )
 
     return overlay_img
+
+
+def get_explainer(
+    model: nn.Module,
+    backend: Literal['dinov2', 'resnet50'] = 'dinov2',
+) -> GradCAMExplainer:
+    """Create a GradCAMExplainer for a given model backend.
+
+    Automatically selects the correct target layer and
+    reshape transform based on the model architecture.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to explain.
+    backend : str
+        ``'dinov2'`` for DINOv2 ViT-S/14 or ``'resnet50'``
+        for ResNet-50.
+
+    Returns
+    -------
+    GradCAMExplainer
+        Ready-to-use explainer instance.
+
+    Raises
+    ------
+    ValueError
+        If ``backend`` is not a supported architecture.
+    """
+    if backend == 'dinov2':
+        blocks = getattr(model, 'blocks')
+        target_layers: list[nn.Module] = [
+            cast(nn.Module, blocks[-1].norm1),
+        ]
+        return GradCAMExplainer(
+            model=model,
+            target_layers=target_layers,
+            reshape_transform_fn=reshape_transform,
+        )
+
+    if backend == 'resnet50':
+        layer4 = getattr(model, 'layer4')
+        target_layers = [
+            cast(nn.Module, layer4[-1]),
+        ]
+        return GradCAMExplainer(
+            model=model,
+            target_layers=target_layers,
+        )
+
+    msg = f"Unsupported backend: '{backend}'"
+    raise ValueError(msg)
