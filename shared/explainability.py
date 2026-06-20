@@ -278,3 +278,56 @@ class AttentionRollout:
         """Clean up hooks on garbage collection."""
         if hasattr(self, '_hooks'):
             self.remove_hooks()
+
+
+def overlay_heatmap(
+    image: np.ndarray,
+    heatmap: np.ndarray,
+    alpha: float = 0.5,
+    colormap: int = cv2.COLORMAP_JET,
+) -> np.ndarray:
+    """Overlay a Grad-CAM heatmap on the original image.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        Original image in RGB format, shape ``(H, W, 3)``,
+        dtype ``uint8``.
+    heatmap : np.ndarray
+        Grayscale heatmap from ``GradCAMExplainer.generate()``,
+        shape ``(H_cam, W_cam)`` with float values in
+        ``[0, 1]``.  Will be resized to match ``image``.
+    alpha : float
+        Blending factor.  ``0.0`` = original image only,
+        ``1.0`` = heatmap only.  ``0.5`` is a good default
+        for clinical visualization.
+    colormap : int
+        OpenCV colormap constant.  ``cv2.COLORMAP_JET`` is
+        the standard for Grad-CAM (blue=cold, red=hot).
+
+    Returns
+    -------
+    np.ndarray
+        Blended image in RGB, shape ``(H, W, 3)``, dtype
+        ``uint8``.  Ready to save as PNG.
+    """
+    from pytorch_grad_cam.utils.image import show_cam_on_image
+    h, w = image.shape[:2]
+
+    heatmap_resized = cv2.resize(
+        heatmap.astype(np.float32),
+        (w, h),
+        interpolation=cv2.INTER_LINEAR,
+    )
+
+    img_float = image.astype(np.float32) / 255.0
+
+    overlay_img: np.ndarray = show_cam_on_image(
+        img_float,
+        heatmap_resized,
+        use_rgb=True,
+        image_weight=1.0 - alpha,
+        colormap=colormap,
+    )
+
+    return overlay_img
