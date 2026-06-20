@@ -54,3 +54,79 @@ def reshape_transform(
     result = result.transpose(2, 3).transpose(1, 2)
 
     return result
+
+
+class GradCAMExplainer:
+    """Wrapper around pytorch-grad-cam for clinical explainability.
+
+    Generates heatmaps highlighting the regions of an image
+    that most strongly influenced a model's prediction.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The PyTorch model to explain (CNN or ViT).
+    target_layers : list[nn.Module]
+        Layers to compute gradients from. For ResNet, typically
+        the last conv layer. For ViT, typically the LayerNorm
+        before the final block.
+    reshape_transform_fn : Callable | None
+        Function to reshape flat sequences to spatial grids.
+        Required for ViTs, ignored for CNNs.
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        target_layers: list[nn.Module],
+        reshape_transform_fn: Callable[[torch.Tensor], torch.Tensor]
+        | None = None,
+    ) -> None:
+        self._model = model
+        self._target_layers = target_layers
+
+        self._cam = GradCAM(
+            model=model,
+            target_layers=target_layers,
+            reshape_transform=reshape_transform_fn,
+        )
+
+    def generate(
+        self,
+        input_tensor: torch.Tensor,
+        target_class: int | None = None,
+    ) -> np.ndarray:
+        """Generate a Grad-CAM heatmap for the input.
+
+        Parameters
+        ----------
+        input_tensor : torch.Tensor
+            Preprocessed image tensor, shape ``(1, 3, H, W)``.
+        target_class : int | None
+            Class index to explain.  If ``None``, uses the
+            model's highest-scoring (argmax) prediction.
+
+        Returns
+        -------
+        np.ndarray
+            Grayscale heatmap of shape ``(H, W)`` with float
+            values in ``[0, 1]``.  Higher values indicate more
+            important regions for the prediction.
+        """
+        targets: list[ClassifierOutputTarget] | None = None
+        if target_class is not None:
+            targets = [ClassifierOutputTarget(target_class)]
+
+        grayscale_cam = self._cam(
+            input_tensor=input_tensor,
+            targets=targets,
+        )
+
+        # np.asarray to satisfy mypy — library returns untyped.
+        result: np.ndarray = np.asarray(grayscale_cam[0])
+        return result
+
+    def __del__(self) -> None:
+        """Remove hooks when the explainer is garbage collected."""
+        if hasattr(self, '_cam'):
+            del self._cam
