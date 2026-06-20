@@ -130,3 +130,151 @@ class GradCAMExplainer:
         """Remove hooks when the explainer is garbage collected."""
         if hasattr(self, '_cam'):
             del self._cam
+
+
+class AttentionRollout:
+    """Attention Rollout for Vision Transformers.
+
+    Produces a spatial attention map by recursively multiplying
+    attention matrices across all transformer layers.  This is
+    a gradient-free method — useful as a fallback when
+    Grad-CAM cannot be used (e.g., frozen models, no-grad
+    inference pipelines).
+
+    Parameters
+    ----------
+    model : nn.Module
+        A ViT model with ``model.blocks`` containing
+        transformer encoder blocks, each having an ``attn``
+        sub-module.
+    head_fusion : str
+        How to fuse multi-head attention matrices.
+        ``'mean'`` averages across heads (most common).
+        ``'max'`` takes the maximum.
+        ``'min'`` takes the minimum.
+
+    Raises
+    ------
+    AttributeError
+        If the model does not have a ``blocks`` attribute
+        (i.e., it is not a ViT).
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        head_fusion: Literal['mean', 'max', 'min'] = 'mean',
+    ) -> None:
+        self._model = model
+        self._head_fusion = head_fusion
+
+        if not hasattr(model, 'blocks'):
+            msg = (
+                'AttentionRollout requires a ViT model '
+                'with a `blocks` attribute'
+            )
+            raise AttributeError(msg)
+
+        self._attentions: list[torch.Tensor] = []
+        self._hooks: list[torch.utils.hooks.RemovableHandle] = []
+        for block in model.blocks:  # type: ignore[union-attr]
+            hook = block.attn.register_forward_hook(
+                self._save_attention
+            )
+            self._hooks.append(hook)
+
+    def _save_attention(
+        self,
+        _module: nn.Module,
+        _input: tuple[torch.Tensor, ...],
+        output: tuple[torch.Tensor, ...] | torch.Tensor,
+    ) -> None:
+        """Hook callback: save attention output."""
+        if isinstance(output, tuple):
+            self._attentions.append(output[0].detach().cpu())
+        else:
+            self._attentions.append(output.detach().cpu())
+
+    def generate(
+        self,
+        input_tensor: torch.Tensor,
+    ) -> np.ndarray:
+        """Generate an attention rollout map.
+
+        Parameters
+        ----------
+        input_tensor : torch.Tensor
+            Preprocessed image, shape ``(1, 3, H, W)``.
+
+        Returns
+        -------
+        np.ndarray
+            Attention map of shape ``(H_patches, W_patches)``
+            with float values in ``[0, 1]``.
+        """
+        self._attentions.clear()
+
+        with torch.no_grad():
+            self._model(input_tensor)
+
+        if not self._attentions:
+            msg = (
+                'No attention weights captured. Verify '
+                'the model attention modules produce '
+                'compatible output.'
+            )
+            raise RuntimeError(msg)
+
+        first_attn = self._attentions[0]
+        seq_len = first_attn.size(-1)
+        result = torch.eye(seq_len)
+
+        for attention in self._attentions:
+            if attention.ndim == 4:
+                if self._head_fusion == 'mean':
+                    fused = attention.mean(dim=1)[0]
+                elif self._head_fusion == 'max':
+                    fused = attention.amax(dim=1)[0]
+                else:
+                    fused = attention.amin(dim=1)[0]
+            else:
+                fused = attention[0]
+
+            # 0.5*A + 0.5*I simulates the residual connection
+            # path (x + attn(x)) present in every ViT block.
+            fused_hat = 0.5 * fused + 0.5 * torch.eye(
+                fused.size(-1)
+            )
+            fused_hat = fused_hat / fused_hat.sum(
+                dim=-1, keepdim=True
+            )
+            result = fused_hat @ result
+
+        # CLS token row (index 0), excluding CLS-to-CLS.
+        mask = result[0, 1:]
+
+        num_patches = mask.size(0)
+        h = w = int(num_patches**0.5)
+        mask_np: np.ndarray = np.asarray(
+            mask.reshape(h, w).numpy()
+        )
+
+        mask_min = float(mask_np.min())
+        mask_max = float(mask_np.max())
+        mask_np = (
+            (mask_np - mask_min)
+            / (mask_max - mask_min + 1e-8)
+        )
+
+        return mask_np
+
+    def remove_hooks(self) -> None:
+        """Remove all registered forward hooks."""
+        for hook in self._hooks:
+            hook.remove()
+        self._hooks.clear()
+
+    def __del__(self) -> None:
+        """Clean up hooks on garbage collection."""
+        if hasattr(self, '_hooks'):
+            self.remove_hooks()
