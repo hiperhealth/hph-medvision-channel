@@ -61,13 +61,19 @@ def test_shared_package_has_no_unexpected_public_api() -> None:
     # filtered above; no user-defined names should be present.
     assert set(public_names).issubset(
         {
-            'models',
-            'preprocessing',
+            'AttentionRollout',
+            'GradCAMExplainer',
             'ImagePreprocessor',
             'ImageQualityError',
             'ModelIntegrityError',
             'ModelRegistry',
             'QualityThresholds',
+            'explainability',
+            'get_explainer',
+            'models',
+            'overlay_heatmap',
+            'preprocessing',
+            'reshape_transform',
         }
     )
 
