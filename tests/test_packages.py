@@ -57,9 +57,22 @@ def test_shared_package_has_no_unexpected_public_api() -> None:
     import shared
 
     public_names = [n for n in dir(shared) if not n.startswith('_')]
-    # Empty __init__.py should only contain standard dunder attributes
-    # filtered above; no user-defined names should be present.
-    assert set(public_names).issubset({'models'})
+    expected_names = {
+        'AttentionRollout',
+        'GradCAMExplainer',
+        'ImagePreprocessor',
+        'ImageQualityError',
+        'ModelIntegrityError',
+        'ModelRegistry',
+        'QualityThresholds',
+        'explainability',
+        'get_explainer',
+        'models',
+        'overlay_heatmap',
+        'preprocessing',
+        'reshape_transform',
+    }
+    assert set(public_names) == expected_names
 
 
 def test_skills_package_has_no_unexpected_public_api() -> None:
@@ -75,7 +88,8 @@ def test_shared_models_package_has_no_unexpected_public_api() -> None:
     import shared.models
 
     public_names = [n for n in dir(shared.models) if not n.startswith('_')]
-    assert public_names == []
+    expected_names = {'ModelIntegrityError', 'ModelRegistry', 'registry'}
+    assert set(public_names) == expected_names
 
 
 def test_double_import_is_idempotent() -> None:
