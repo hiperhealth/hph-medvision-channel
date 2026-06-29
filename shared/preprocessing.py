@@ -2,10 +2,11 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from monai.transforms import (  # type: ignore[attr-defined]
@@ -76,9 +77,9 @@ class ImageQualityError(Exception):
 
 
 def correct_exif_orientation(
-    image: np.ndarray,
+    image: npt.NDArray[Any],
     path: Path,
-) -> np.ndarray:
+) -> npt.NDArray[Any]:
     """Rotate *image* to match its EXIF orientation tag.
 
     Phone cameras store photos with the raw sensor orientation
@@ -125,7 +126,7 @@ def correct_exif_orientation(
 def validate_image(
     image_path: str | Path,
     thresholds: QualityThresholds | None = None,
-) -> np.ndarray:
+) -> npt.NDArray[Any]:
     """Validate a clinical image against quality thresholds.
 
     Checks are applied in order: file existence, format, decode
@@ -260,7 +261,7 @@ def build_inference_transforms(
     )
 
 
-def _bgr_to_rgb(image: np.ndarray) -> np.ndarray:
+def _bgr_to_rgb(image: npt.NDArray[Any]) -> npt.NDArray[Any]:
     """Convert a BGR image to contiguous RGB array.
 
     Parameters
@@ -306,7 +307,7 @@ class ImagePreprocessor:
         self._thresholds = thresholds or DEFAULT_THRESHOLDS
         self._transforms = build_inference_transforms(target_size)
 
-    def validate(self, image_path: str | Path) -> np.ndarray:
+    def validate(self, image_path: str | Path) -> npt.NDArray[Any]:
         """Validate image quality without running transforms.
 
         Parameters
@@ -355,4 +356,4 @@ class ImagePreprocessor:
         if not isinstance(tensor, torch.Tensor):
             tensor = torch.as_tensor(tensor)
 
-        return cast(torch.Tensor, tensor.unsqueeze(0))
+        return tensor.unsqueeze(0)  # type: ignore[no-any-return, redundant-cast, unused-ignore]
