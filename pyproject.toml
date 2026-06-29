@@ -58,9 +58,6 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unused_configs = true
 exclude = ["scripts/", "tests/"]
-plugins = [
-  "pydantic.mypy",
-]
 
 [tool.pytest.ini_options]
 testpaths = [

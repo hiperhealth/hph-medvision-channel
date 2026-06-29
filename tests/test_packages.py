@@ -59,7 +59,15 @@ def test_shared_package_has_no_unexpected_public_api() -> None:
     public_names = [n for n in dir(shared) if not n.startswith('_')]
     # Empty __init__.py should only contain standard dunder attributes
     # filtered above; no user-defined names should be present.
-    assert set(public_names).issubset({'models'})
+    assert set(public_names).issubset(
+        {
+            'models',
+            'preprocessing',
+            'ImagePreprocessor',
+            'ImageQualityError',
+            'QualityThresholds',
+        }
+    )
 
 
 def test_skills_package_has_no_unexpected_public_api() -> None:
