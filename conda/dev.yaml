@@ -1,0 +1,13 @@
+name: medvision-channel
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python >=3.10,<=3.12
+  - pip
+  - nodejs # used by semantic-release
+  - uv
+  - compilers # conda-forge meta-package: selects the right C/C++ toolchain per platform
+  - pip:
+      - paginate==0.5.6 # distlib issue
