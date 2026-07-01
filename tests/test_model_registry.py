@@ -302,6 +302,57 @@ class TestModelRegistry:
         reg = ModelRegistry(cache_dir=tmp_path)
         reg.get_weights(_MODEL_ID, _FAKE_URL, _FAKE_SHA)
 
-        mock_filelock.assert_called_once_with(
-            tmp_path / f'.{_MODEL_ID}.lock',
+        # FileLock is called twice: once for per-model lock,
+        # once for manifest lock in __init__
+        calls = mock_filelock.call_args_list
+        per_model = tmp_path / f'.{_MODEL_ID}.lock'
+        assert any(c.args == (per_model,) for c in calls)
+
+    @pytest.mark.parametrize(
+        'bad_id',
+        [
+            '../escape',
+            'foo/bar',
+            'foo\\bar',
+            '',
+            '..',
+            'a/../b',
+        ],
+    )
+    def test_rejects_unsafe_model_ids(
+        self,
+        bad_id: str,
+        tmp_path: Path,
+    ) -> None:
+        reg = ModelRegistry(cache_dir=tmp_path)
+        with pytest.raises(ValueError, match='Invalid model_id'):
+            reg.get_weights(
+                bad_id,
+                _FAKE_URL,
+                _FAKE_SHA,
+            )
+
+    @pytest.mark.parametrize(
+        'good_id',
+        [
+            'dinov2_vits14',
+            'resnet50-skin',
+            'model.v2',
+            'M1',
+        ],
+    )
+    @patch('shared.models.registry.urllib.request.urlopen')
+    def test_accepts_safe_model_ids(
+        self,
+        mock_urlopen: MagicMock,
+        good_id: str,
+        tmp_path: Path,
+    ) -> None:
+        mock_urlopen.return_value = _mock_urlopen()
+        reg = ModelRegistry(cache_dir=tmp_path)
+        path = reg.get_weights(
+            good_id,
+            _FAKE_URL,
+            _FAKE_SHA,
         )
+        assert path.exists()

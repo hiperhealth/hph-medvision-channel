@@ -65,6 +65,8 @@ def test_shared_package_has_no_unexpected_public_api() -> None:
             'preprocessing',
             'ImagePreprocessor',
             'ImageQualityError',
+            'ModelIntegrityError',
+            'ModelRegistry',
             'QualityThresholds',
         }
     )
@@ -79,11 +81,17 @@ def test_skills_package_has_no_unexpected_public_api() -> None:
 
 
 def test_shared_models_package_has_no_unexpected_public_api() -> None:
-    """Newly added __init__.py for shared.models exposes no public names."""
+    """shared.models exposes registry public API."""
     import shared.models
 
     public_names = [n for n in dir(shared.models) if not n.startswith('_')]
-    assert public_names == []
+    assert set(public_names).issubset(
+        {
+            'ModelIntegrityError',
+            'ModelRegistry',
+            'registry',
+        }
+    )
 
 
 def test_double_import_is_idempotent() -> None:
