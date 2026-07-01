@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import re
 import shutil
 import urllib.request
 
@@ -21,7 +22,9 @@ from filelock import FileLock
 
 _DEFAULT_CACHE_DIR = Path.home() / '.hiperhealth' / 'models'
 _MANIFEST_FILENAME = 'manifest.json'
+_MANIFEST_LOCK = '.manifest.lock'
 _CHUNK_SIZE = 8192  # bytes per read during download/hash
+_SAFE_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
 
 
 @dataclass(frozen=True)
@@ -105,6 +108,31 @@ class ModelRegistry:
         self._cache_dir = cache_dir or _DEFAULT_CACHE_DIR
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._manifest_path = self._cache_dir / _MANIFEST_FILENAME
+        self._manifest_lock = FileLock(
+            self._cache_dir / _MANIFEST_LOCK,
+        )
+
+    @staticmethod
+    def _validate_model_id(model_id: str) -> None:
+        """Reject model IDs that could escape the cache dir.
+
+        Only alphanumeric characters, dots, hyphens, and
+        underscores are allowed.  Path separators (``/``,
+        ``\\``) and ``..`` sequences are forbidden to
+        prevent path-traversal attacks.
+
+        Raises
+        ------
+        ValueError
+            If *model_id* contains unsafe characters.
+        """
+        if not model_id or not _SAFE_ID_RE.match(model_id) or '..' in model_id:
+            raise ValueError(
+                f'Invalid model_id {model_id!r}: '
+                'must be non-empty, contain only '
+                '[A-Za-z0-9._-], and not include '
+                '".." sequences.'
+            )
 
     def _load_manifest(self) -> dict[str, object]:
         """Read the JSON manifest from disk.
@@ -117,7 +145,10 @@ class ModelRegistry:
         """
         if not self._manifest_path.exists():
             return {}
-        with self._manifest_path.open('r') as fh:
+        with self._manifest_path.open(
+            'r',
+            encoding='utf-8',
+        ) as fh:
             return json.load(fh)  # type: ignore[no-any-return]
 
     def _save_manifest(
@@ -127,10 +158,10 @@ class ModelRegistry:
         """Write the JSON manifest to disk atomically.
 
         Writes to a temporary ``.tmp`` file first, then
-        renames to the final path.  ``rename()`` is atomic
-        on POSIX when source and target are on the same
-        filesystem (guaranteed here since both are in
-        ``_cache_dir``).
+        uses ``replace()`` (``os.replace``) to atomically
+        overwrite the final path.  Unlike ``rename()``,
+        ``replace()`` works cross-platform even when the
+        destination already exists.
 
         Parameters
         ----------
@@ -138,9 +169,9 @@ class ModelRegistry:
             Full manifest to persist.
         """
         tmp = self._manifest_path.with_suffix('.tmp')
-        with tmp.open('w') as fh:
+        with tmp.open('w', encoding='utf-8') as fh:
             json.dump(manifest, fh, indent=2)
-        tmp.rename(self._manifest_path)
+        tmp.replace(self._manifest_path)
 
     @staticmethod
     def _compute_sha256(path: Path) -> str:
@@ -189,7 +220,7 @@ class ModelRegistry:
             with urllib.request.urlopen(req) as resp:
                 with tmp.open('wb') as fh:
                     shutil.copyfileobj(resp, fh)
-            tmp.rename(dest)
+            tmp.replace(dest)
         finally:
             if tmp.exists():
                 tmp.unlink()
@@ -231,6 +262,7 @@ class ModelRegistry:
             If the file's hash does not match
             *expected_sha256*.
         """
+        self._validate_model_id(model_id)
         filename = f'{model_id}.pth'
         dest = self._cache_dir / filename
         lock = FileLock(
@@ -259,19 +291,22 @@ class ModelRegistry:
                     actual,
                 )
 
-            # 3. Update manifest
-            manifest = self._load_manifest()
-            entry = ModelEntry(
-                model_id=model_id,
-                url=url,
-                sha256=expected_sha256,
-                filename=filename,
-                downloaded_at=datetime.now(
-                    tz=timezone.utc,
-                ).isoformat(),
-            )
-            manifest[model_id] = dataclasses.asdict(entry)
-            self._save_manifest(manifest)
+            # 3. Update manifest under global lock
+            with self._manifest_lock:
+                manifest = self._load_manifest()
+                entry = ModelEntry(
+                    model_id=model_id,
+                    url=url,
+                    sha256=expected_sha256,
+                    filename=filename,
+                    downloaded_at=datetime.now(
+                        tz=timezone.utc,
+                    ).isoformat(),
+                )
+                manifest[model_id] = dataclasses.asdict(
+                    entry,
+                )
+                self._save_manifest(manifest)
 
             return dest
 
