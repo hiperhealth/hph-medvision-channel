@@ -62,12 +62,13 @@ def test_whitelist_references_vulture_docs() -> None:
     )
 
 
-def test_whitelist_contains_no_syntax_errors_when_executed() -> None:
-    """Executing vulture_whitelist.py in a clean namespace must not raise."""
+def test_whitelist_parses_without_error() -> None:
+    """vulture_whitelist.py must parse into a valid AST."""
     source = WHITELIST_PATH.read_text(encoding='utf-8')
-    namespace: dict = {}  # type: ignore[type-arg]
-    # exec on comment-only files should be completely safe
-    exec(compile(source, str(WHITELIST_PATH), 'exec'), namespace)
+    # ast.parse validates syntax without executing bare names
+    # that would raise NameError under exec().
+    tree = ast.parse(source, filename=str(WHITELIST_PATH))
+    assert tree is not None
 
 
 def test_whitelist_ast_body_is_comment_only() -> None:
