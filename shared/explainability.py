@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Callable, Literal, cast
+from typing import Any, Callable, Literal, cast
 
 import cv2
 import numpy as np
 import torch
 
+from numpy.typing import NDArray
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.model_targets import (
     ClassifierOutputTarget,
@@ -95,7 +96,7 @@ class GradCAMExplainer:
         self,
         input_tensor: torch.Tensor,
         target_class: int | None = None,
-    ) -> np.ndarray:
+    ) -> NDArray[Any]:
         """Generate a Grad-CAM heatmap for the input.
 
         Parameters
@@ -123,7 +124,7 @@ class GradCAMExplainer:
         )
 
         # np.asarray to satisfy mypy — library returns untyped.
-        result: np.ndarray = np.asarray(grayscale_cam[0])
+        result: NDArray[Any] = np.asarray(grayscale_cam[0])
         return result
 
     def __del__(self) -> None:
@@ -196,7 +197,7 @@ class AttentionRollout:
     def generate(
         self,
         input_tensor: torch.Tensor,
-    ) -> np.ndarray:
+    ) -> NDArray[Any]:
         """Generate an attention rollout map.
 
         Parameters
@@ -249,7 +250,7 @@ class AttentionRollout:
 
         num_patches = mask.size(0)
         h = w = int(num_patches**0.5)
-        mask_np: np.ndarray = np.asarray(mask.reshape(h, w).numpy())
+        mask_np: NDArray[Any] = np.asarray(mask.reshape(h, w).numpy())
 
         mask_min = float(mask_np.min())
         mask_max = float(mask_np.max())
@@ -270,11 +271,11 @@ class AttentionRollout:
 
 
 def overlay_heatmap(
-    image: np.ndarray,
-    heatmap: np.ndarray,
+    image: NDArray[Any],
+    heatmap: NDArray[Any],
     alpha: float = 0.5,
     colormap: int = cv2.COLORMAP_JET,
-) -> np.ndarray:
+) -> NDArray[Any]:
     """Overlay a Grad-CAM heatmap on the original image.
 
     Parameters
@@ -312,7 +313,7 @@ def overlay_heatmap(
 
     img_float = image.astype(np.float32) / 255.0
 
-    overlay_img: np.ndarray = show_cam_on_image(
+    overlay_img: NDArray[Any] = show_cam_on_image(
         img_float,
         heatmap_resized,
         use_rgb=True,
